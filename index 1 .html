@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Object Detector for Blind Users</title>
+  <style>
+    video, canvas {
+      display: block;
+      margin: auto;
+      max-width: 100%;
+    }
+    body {
+      background: #111;
+      color: white;
+      text-align: center;
+      font-size: 20px;
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <h2>🧠 Object Detector with Voice for Blind Users</h2>
+  <video id="video" width="640" height="480" autoplay playsinline muted></video>
+  <canvas id="canvas" width="640" height="480"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let lastSpoken = '';
+    let lastTime = 0;
+
+    function speak(text) {
+      const msg = new SpeechSynthesisUtterance(text);
+      msg.lang = 'en-US'; // change to 'hi-IN' or 'mr-IN' for Hindi/Marathi
+      msg.pitch = 1.2;
+      msg.rate = 1;
+      speechSynthesis.speak(msg);
+    }
+
+    function areObjectsSame(prev, curr) {
+      const a = new Set(prev.split(', '));
+      const b = new Set(curr.split(', '));
+      if (a.size !== b.size) return false;
+      for (let item of a) if (!b.has(item)) return false;
+      return true;
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }, // rear camera on mobile
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+      } catch (err) {
+        alert("Camera access denied or unavailable.");
+        console.error("Camera error:", err);
+      }
+    }
+
+    async function detectObjects() {
+      const model = await cocoSsd.load();
+      console.log("✅ Model loaded");
+
+      setInterval(async () => {
+        if (video.readyState === 4) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const predictions = await model.detect(canvas);
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          let objects = [];
+
+          predictions.forEach(pred => {
+            if (pred.score > 0.6) {
+              objects.push(pred.class);
+              ctx.strokeStyle = 'lime';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(...pred.bbox);
+              ctx.fillStyle = 'lime';
+              ctx.fillText(pred.class, pred.bbox[0], pred.bbox[1] > 10 ? pred.bbox[1] - 5 : 10);
+            }
+          });
+
+          const now = Date.now();
+          if (objects.length && now - lastTime > 3000) {
+            const unique = [...new Set(objects)].join(', ');
+            if (!areObjectsSame(lastSpoken, unique)) {
+              speak("Object ahead: " + unique);
+              lastSpoken = unique;
+              lastTime = now;
+            }
+          }
+        }
+      }, 2000); // every 2 seconds
+    }
+
+    // Start camera first, then detect
+    startCamera().then(detectObjects);
+  </script>
+</body>
+</html>
